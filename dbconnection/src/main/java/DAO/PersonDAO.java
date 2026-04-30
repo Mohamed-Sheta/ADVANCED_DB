@@ -14,67 +14,63 @@ import odb.Person;
 
 public class PersonDAO {
 
-    private EntityManagerFactory emf =
-    Persistence.createEntityManagerFactory("com.mycompany_dbconnection_jar_1.0-SNAPSHOTPU");//connction wit the database
-    
-    
-    
-    public void rollback(Person p,Book b1){
-            EntityManager em = emf.createEntityManager();
-            
-            BorrowDAO dao=new BorrowDAO();
-          LibraryBookDAO lib=new LibraryBookDAO();
-          
-          ;//this get me the nearset book in the database in the librarybook database i pass to it the bookid and then search for thr book id in the librarybook and first one found is being taken to be borrowed 
-   Borrow borrow =dao.searchforpersonandbook(p, b1);
-  try {
-        Borrow b = new Borrow();
-        if(borrow!=null){
-        borrow.getLibrary_Book().setAvailable_Copies(borrow.getLibrary_Book().getAvailable_Copies()+1);
-        lib.update(borrow.getLibrary_Book());//update the avaliable copies here
-        borrow.setReturnDate(LocalDate.now());
-        borrow.setStatus("RETURNED");
-        dao.update(borrow);
-    
+    private static EntityManagerFactory emf;
+
+    public PersonDAO() {
+        synchronized (PersonDAO.class) {
+            if (emf == null) {
+                emf = Persistence.createEntityManagerFactory("dbconnectionPU");
+            }
         }
-        else{
-            System.out.println("the Book is not avialble right now");
-            
-        }    
-    } finally {
-        em.close();
-    }
-    }
-    
-    
-    //this is used as the user is making a borrow form thr nearset book in the datatabase 
-    public void borrowBook(Person p, Book b1) {
-    EntityManager em = emf.createEntityManager();
-  LibraryBookDAO dao=new LibraryBookDAO();
-BorrowDAO borrow=new BorrowDAO();
-  
-Library_Book lb=dao.asigh_book(b1);//this get me the nearset book in the database in the librarybook database i pass to it the bookid and then search for thr book id in the librarybook and first one found is being taken to be borrowed 
-    try {
-        em.getTransaction().begin();
-        Borrow b = new Borrow();
-        if(lb!=null){
-        b.setP(p);
-        b.setBorrowDate(LocalDate.now());
-        b.setStatus("BORROWED");
-        lb.setAvailable_Copies(lb.getAvailable_Copies()-1);
-        dao.update(lb);//update the avaliable copies here
-        b.setLibrary_Book(lb);
-        em.getTransaction().commit();
-        borrow.insert(b);
-        }
-        else{
-            System.out.println("the Book is not avialble right now");
-            
-        }    
-    } finally {
-        em.close();
     }
 
+    public void rollback(Person p, Book b1) {
+
+        EntityManager em = emf.createEntityManager();
+        EntityTransaction tx = em.getTransaction();
+
+        BorrowDAO dao = new BorrowDAO();
+        LibraryBookDAO lib = new LibraryBookDAO();
+
+        try {
+            tx.begin();
+
+            Borrow borrow = dao.searchforpersonandbook(p, b1);
+
+            if (borrow == null) {
+                System.out.println("User did not borrow this book");
+                return;
+            }
+
+            if ("RETURNED".equals(borrow.getStatus())) {
+                System.out.println("Book already returned");
+                return;
+            }
+
+            Library_Book lb = borrow.getLibrary_Book();
+
+            lb.setAvailable_Copies(lb.getAvailable_Copies() + 1);
+            lib.update(lb);
+
+            borrow.setReturnDate(LocalDate.now());
+            borrow.setStatus("RETURNED");
+            dao.update(borrow);
+
+            tx.commit();
+
+            System.out.println("Book returned successfully ✅");
+
+        } catch (Exception e) {
+
+            if (tx.isActive()) {
+                tx.rollback();
+            }
+
+            e.printStackTrace();
+
+        } finally {
+            em.close();
+        }
     }
 
     public void borrowLibraryBook(Person p, Long libraryBookId) {

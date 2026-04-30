@@ -14,7 +14,7 @@ public class Book implements Serializable {
 
     private static final long serialVersionUID = 1L;
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     
     @Column(name="Author")//name fpr the author
@@ -24,11 +24,17 @@ public class Book implements Serializable {
     private String Title;
      
      @OneToMany(mappedBy="B")
-     List<Library_Book> Library_Book; 
+     List<Library_Book> Library_Book;
 
     public Book() {
+
     }
-     
+
+    public Book(String Author, String Title) {
+        this.Author = Author;
+        this.Title = Title;
+    }
+
     public String getAuthor() {
         return Author;
     }
@@ -62,7 +68,6 @@ public class Book implements Serializable {
 
     @Override
     public boolean equals(Object object) {
-        // TODO: Warning - this method won't work in the case the id fields are not set
         if (!(object instanceof Book)) {
             return false;
         }
@@ -73,14 +78,10 @@ public class Book implements Serializable {
         return true;
     }
 
-    public Book(String Author, String Title) {
-        this.Author = Author;
-        this.Title = Title;
-    }
 
     @Override
     public String toString() {
-        return "odb.Book[ " + this.Author +","+this.Title+ " ]";
+        return "odb.Book[ " + this.Author + ","+this.Title+ " ]";
     }
     
 }

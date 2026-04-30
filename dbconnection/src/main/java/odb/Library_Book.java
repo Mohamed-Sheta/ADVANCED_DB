@@ -24,7 +24,7 @@ public class Library_Book implements Serializable {
 
     private static final long serialVersionUID = 1L;
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name="Total_Copies")//for all copies we have not right now in general
@@ -34,11 +34,11 @@ public class Library_Book implements Serializable {
     private int Available_Copies;
      
     @ManyToOne
-    @JoinColumn(name = "library_id")
+    @JoinColumn(name = "library_id", nullable = false)
     private Library l;
 
     @ManyToOne
-    @JoinColumn(name = "book_id")
+    @JoinColumn(name = "book_id", nullable = false)
     private Book B;
     
     @OneToMany(mappedBy="Library_Book")
@@ -112,7 +112,6 @@ public class Library_Book implements Serializable {
 
     @Override
     public boolean equals(Object object) {
-        // TODO: Warning - this method won't work in the case the id fields are not set
         if (!(object instanceof Library_Book)) {
             return false;
         }

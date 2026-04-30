@@ -19,7 +19,11 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import DAO.BorrowDAO;
+import DAO.PersonDAO;
 import odb.Person;
+import odb.Borrow;
+import java.util.List;
 
 public class ProfileView {
     private final BorderPane root = new BorderPane();
@@ -37,6 +41,7 @@ public class ProfileView {
             Runnable onLogin,
             Runnable onRegister
     ) {
+        System.out.println("Constructing ProfileView; loggedIn=" + (sessionService != null && sessionService.isLoggedIn()));
         root.getStyleClass().add("app-root");
         root.setPadding(Insets.EMPTY);
         this.onSettings = onSettings;
@@ -67,7 +72,25 @@ public class ProfileView {
         topBar.setAlignment(Pos.CENTER_LEFT);
 
         Button backButton = iconButton("arrow_back");
-        backButton.setGraphic(imageIcon(BACK_ICON, 24, 24));
+        java.io.InputStream bis = getClass().getResourceAsStream(BACK_ICON);
+        if (bis != null) {
+            try (java.io.InputStream is = bis) {
+                Image backImg = new Image(is);
+                ImageView biv = new ImageView(backImg);
+                biv.setFitWidth(24);
+                biv.setFitHeight(24);
+                biv.setPreserveRatio(true);
+                biv.setSmooth(true);
+                biv.setCache(true);
+                backButton.setGraphic(biv);
+            } catch (Exception ex) {
+                System.out.println("Failed to load back icon: " + BACK_ICON + " -> " + ex.getMessage());
+                backButton.getStyleClass().add("icon-missing");
+            }
+        } else {
+            System.out.println("Back icon not found: " + BACK_ICON);
+            backButton.getStyleClass().add("icon-missing");
+        }
         backButton.setDisable(!canGoBack);
         backButton.setOnAction(event -> onBack.run());
 
@@ -83,7 +106,8 @@ public class ProfileView {
 
         Button settings = new Button();
         settings.getStyleClass().add("icon-button");
-        settings.setGraphic(imageIcon(SETTINGS_ICON, 24, 24));
+        ImageView settingsIv = createImageView(SETTINGS_ICON, 24, 24);
+        if (settingsIv != null) settings.setGraphic(settingsIv);
         settings.setOnAction(event -> onSettings.run());
 
         Button signOut = new Button("Sign Out");
@@ -192,7 +216,7 @@ public class ProfileView {
         TextField addressField = new TextField(person.getAddress());
         ComboBox<String> genderField = new ComboBox<>();
         genderField.getItems().addAll("Male", "Female");
-        if (person.getGender() != null && !person.getGender().isBlank()) {
+        if (person.getGender() != null && !person.getGender().trim().isEmpty()) {
             genderField.setValue(person.getGender());
         }
 
@@ -277,7 +301,6 @@ public class ProfileView {
         return guest;
     }
 
-
     private VBox buildLoggedInDetails(SessionService sessionService) {
         VBox details = new VBox(14);
         details.getStyleClass().add("profile-panel");
@@ -287,10 +310,107 @@ public class ProfileView {
         Label description = new Label("This account is active and ready for archive access.");
         description.getStyleClass().add("section-caption");
 
-        details.getChildren().addAll(title, description);
+        Label feedbackLabel = new Label();
+        feedbackLabel.getStyleClass().addAll("auth-message");
+
+        // Don't perform DAO calls on the JavaFX thread. Show a placeholder immediately
+        VBox booksList = new VBox(12);
+        booksList.getStyleClass().add("borrowed-books-list");
+        Label loading = new Label("Loading borrowed books...");
+        loading.getStyleClass().add("section-caption");
+        booksList.getChildren().add(loading);
+
+        // Populate the UI so the view renders immediately
+        details.getChildren().addAll(title, description, feedbackLabel, booksList);
+
+        // Load borrowed books in a background thread and update UI with Platform.runLater
+        Thread loader = new Thread(() -> {
+            try {
+                BorrowDAO borrowDAO = new BorrowDAO();
+                PersonDAO personDAO = new PersonDAO();
+                Long personId = sessionService.getCurrentUser() == null ? null : sessionService.getCurrentUser().getId();
+                List<Borrow> borrowedBooks = personId == null ? java.util.Collections.emptyList() : borrowDAO.findByPersonId(personId);
+
+                javafx.application.Platform.runLater(() -> {
+                    booksList.getChildren().clear();
+                    if (borrowedBooks == null || borrowedBooks.isEmpty()) {
+                        Label none = new Label("You have no borrowed books.");
+                        none.getStyleClass().add("section-caption");
+                        booksList.getChildren().add(none);
+                    } else {
+                        for (Borrow borrow : borrowedBooks) {
+                            HBox row = buildBorrowEntry(borrow, sessionService, personDAO, feedbackLabel);
+                            booksList.getChildren().add(row);
+                        }
+                    }
+                });
+            } catch (Exception ex) {
+                javafx.application.Platform.runLater(() -> {
+                    feedbackLabel.getStyleClass().removeAll("success-text");
+                    feedbackLabel.getStyleClass().add("error-text");
+                    feedbackLabel.setText(ex.getMessage());
+                    booksList.getChildren().clear();
+                    Label fail = new Label("Failed to load borrowed books.");
+                    fail.getStyleClass().add("section-caption");
+                    booksList.getChildren().add(fail);
+                });
+            }
+        });
+        loader.setDaemon(true);
+        loader.start();
+
         return details;
     }
 
+    // Build UI row for a single Borrow entry. The actual DB rollback is performed on a background thread;
+    // UI updates are applied via Platform.runLater.
+    private HBox buildBorrowEntry(Borrow borrow, SessionService sessionService, PersonDAO personDAO, Label feedbackLabel) {
+        odb.Library_Book lb = borrow.getLibrary_Book();
+        String bookTitle = lb != null && lb.getB() != null ? lb.getB().getTitle() : "Unknown title";
+        String bookAuthor = lb != null && lb.getB() != null ? lb.getB().getAuthor() : "Unknown author";
+
+        Label bookLabel = new Label(bookTitle + " — " + bookAuthor + "  (Status: " + borrow.getStatus() + ")");
+        bookLabel.getStyleClass().add("book-detail");
+
+        Button returnButton = new Button("Return Book");
+        returnButton.getStyleClass().add("return-button");
+        returnButton.setDisable("RETURNED".equalsIgnoreCase(borrow.getStatus()));
+
+        HBox bookEntry = new HBox(12);
+        bookEntry.setAlignment(Pos.CENTER_LEFT);
+        bookEntry.getChildren().addAll(bookLabel, returnButton);
+
+        returnButton.setOnAction(evt -> {
+            // Perform the potentially slow DB operation off the JavaFX thread
+            Thread t = new Thread(() -> {
+                try {
+                    if (lb != null && lb.getB() != null) {
+                        personDAO.rollback(sessionService.getCurrentUser(), lb.getB());
+                    }
+                    javafx.application.Platform.runLater(() -> {
+                        feedbackLabel.getStyleClass().removeAll("error-text");
+                        feedbackLabel.getStyleClass().add("success-text");
+                        feedbackLabel.setText("Book returned successfully.");
+                        borrow.setStatus("RETURNED");
+                        bookLabel.setText(bookTitle + " — " + bookAuthor + "  (Status: RETURNED)");
+                        returnButton.setDisable(true);
+                    });
+                } catch (Exception ex) {
+                    javafx.application.Platform.runLater(() -> {
+                        feedbackLabel.getStyleClass().removeAll("success-text");
+                        feedbackLabel.getStyleClass().add("error-text");
+                        feedbackLabel.setText(ex.getMessage());
+                    });
+                }
+            });
+            t.setDaemon(true);
+            t.start();
+        });
+
+        return bookEntry;
+    }
+
+    // Re-introduce the missing buildGuestBanner method expected by the constructor
     private VBox buildGuestBanner(Runnable onLogin, Runnable onRegister) {
         VBox guest = new VBox(14);
         guest.getStyleClass().add("guest-actions");
@@ -306,11 +426,13 @@ public class ProfileView {
         Button loginButton = new Button("Sign In");
         loginButton.getStyleClass().add("primary-button");
         loginButton.setGraphic(iconLabel("login"));
+        loginButton.setContentDisplay(javafx.scene.control.ContentDisplay.LEFT);
         loginButton.setOnAction(event -> onLogin.run());
 
         Button registerButton = new Button("Register");
         registerButton.getStyleClass().add("outline-button");
         registerButton.setGraphic(iconLabel("app_registration"));
+        registerButton.setContentDisplay(javafx.scene.control.ContentDisplay.LEFT);
         registerButton.setOnAction(event -> onRegister.run());
 
         actions.getChildren().addAll(loginButton, registerButton);
@@ -365,11 +487,38 @@ public class ProfileView {
         return button;
     }
 
-    private ImageView imageIcon(String path, double fitWidth, double fitHeight) {
-        ImageView imageView = new ImageView(new Image(getClass().getResourceAsStream(path)));
+    private ImageView createImageView(String path, double fitWidth, double fitHeight) {
+        ImageView imageView = new ImageView();
+        if (path == null || path.trim().isEmpty()) {
+            imageView.getStyleClass().add("icon-missing");
+            imageView.setFitWidth(fitWidth);
+            imageView.setFitHeight(fitHeight);
+            imageView.setPreserveRatio(true);
+            return imageView;
+        }
+
+        String normalized = path.startsWith("/") ? path : "/" + path;
+        try (java.io.InputStream is = getClass().getResourceAsStream(normalized)) {
+            if (is != null) {
+                try {
+                    Image image = new Image(is);
+                    imageView.setImage(image);
+                } catch (Exception ex) {
+                    System.out.println("Failed to construct Image from stream: " + normalized + " -> " + ex.getMessage());
+                    imageView.getStyleClass().add("icon-missing");
+                }
+            } else {
+                System.out.println("Image not found: " + normalized);
+                imageView.getStyleClass().add("icon-missing");
+            }
+        } catch (Exception ex) {
+            System.out.println("Error loading image: " + normalized + " -> " + ex.getMessage());
+            imageView.getStyleClass().add("icon-missing");
+        }
+
         imageView.setFitWidth(fitWidth);
         imageView.setFitHeight(fitHeight);
-        imageView.setPreserveRatio(false);
+        imageView.setPreserveRatio(true);
         imageView.setSmooth(true);
         imageView.setCache(true);
         return imageView;
@@ -380,6 +529,7 @@ public class ProfileView {
         label.getStyleClass().add("material-symbol");
         return label;
     }
+
 
     public Parent getRoot() {
         return root;

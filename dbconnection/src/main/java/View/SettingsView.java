@@ -116,7 +116,30 @@ public class SettingsView {
     }
 
     private ImageView imageIcon(String path, double fitWidth, double fitHeight) {
-        ImageView imageView = new ImageView(new Image(getClass().getResourceAsStream(path)));
+        ImageView imageView = new ImageView();
+        if (path == null || path.trim().isEmpty()) {
+            imageView.getStyleClass().add("icon-missing");
+            imageView.setFitWidth(fitWidth);
+            imageView.setFitHeight(fitHeight);
+            imageView.setPreserveRatio(false);
+            return imageView;
+        }
+
+        String normalized = path.startsWith("/") ? path : "/" + path;
+        try (java.io.InputStream is = getClass().getResourceAsStream(normalized)) {
+            if (is != null) {
+                try {
+                    Image img = new Image(is, fitWidth, fitHeight, true, true);
+                    imageView.setImage(img);
+                } catch (Exception e) {
+                    imageView.getStyleClass().add("icon-missing");
+                }
+            } else {
+                imageView.getStyleClass().add("icon-missing");
+            }
+        } catch (Exception ex) {
+            imageView.getStyleClass().add("icon-missing");
+        }
         imageView.setFitWidth(fitWidth);
         imageView.setFitHeight(fitHeight);
         imageView.setPreserveRatio(false);

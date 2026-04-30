@@ -12,7 +12,7 @@ import javax.persistence.ManyToOne;
 import javax.persistence.Table;
 import javax.persistence.UniqueConstraint;
 
- @Table(
+@Table(
     uniqueConstraints = @UniqueConstraint(
         columnNames = {"LibraryBook_id", "Person_id"}
     )
@@ -22,16 +22,16 @@ public class Borrow implements Serializable {
 
     private static final long serialVersionUID = 1L;
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     
     @ManyToOne
-     @JoinColumn(name="Person_id")
+     @JoinColumn(name="Person_id", nullable = false)
     private Person p;
     
      @ManyToOne
-     @JoinColumn(name="LibraryBook_id")
-     Library_Book Library_Book;    
+     @JoinColumn(name="LibraryBook_id", nullable = false)
+     Library_Book Library_Book;
 
     @Column(name="BorrowDate")
     private LocalDate borrowDate;
@@ -74,7 +74,6 @@ public class Borrow implements Serializable {
 
     @Override
     public boolean equals(Object object) {
-        // TODO: Warning - this method won't work in the case the id fields are not set
         if (!(object instanceof Borrow)) {
             return false;
         }

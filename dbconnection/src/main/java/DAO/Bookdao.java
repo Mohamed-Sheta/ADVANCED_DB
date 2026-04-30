@@ -1,6 +1,7 @@
 package DAO;
 
 import java.util.List;
+import java.util.ArrayList;
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.Persistence;
@@ -8,8 +9,15 @@ import odb.Book;
 
 public class Bookdao {
 
-    private EntityManagerFactory emf =
-            Persistence.createEntityManagerFactory("com.mycompany_dbconnection_jar_1.0-SNAPSHOTPU");
+    private static EntityManagerFactory emf;
+
+    public Bookdao() {
+        synchronized (Bookdao.class) {
+            if (emf == null) {
+                emf = Persistence.createEntityManagerFactory("dbconnectionPU");
+            }
+        }
+    }
 
     public void insert(Book book) {
         EntityManager em = emf.createEntityManager();
@@ -101,6 +109,29 @@ public class Bookdao {
              .getResultList();
         } finally {
             em.close();
+        }
+    }
+
+    public boolean isEmpty() {
+        return findAll().isEmpty();
+    }
+
+    public void seedDefaultBooks() {
+        if (!isEmpty()) return;
+        List<Book> books = new ArrayList<>();
+        books.add(new Book("George Orwell", "1984"));
+        books.add(new Book("Harper Lee", "To Kill a Mockingbird"));
+        books.add(new Book("F. Scott Fitzgerald", "The Great Gatsby"));
+        books.add(new Book("Jane Austen", "Pride and Prejudice"));
+        books.add(new Book("J.R.R. Tolkien", "The Hobbit"));
+        books.add(new Book("Mary Shelley", "Frankenstein"));
+        books.add(new Book("Markus Zusak", "The Book Thief"));
+        books.add(new Book("Gabriel García Márquez", "One Hundred Years of Solitude"));
+        books.add(new Book("Leo Tolstoy", "War and Peace"));
+        books.add(new Book("Homer", "The Odyssey"));
+
+        for (Book b : books) {
+            insert(b);
         }
     }
 }

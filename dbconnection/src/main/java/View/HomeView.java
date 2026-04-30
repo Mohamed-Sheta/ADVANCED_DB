@@ -2,6 +2,7 @@ package View;
 
 import Services.LibraryService;
 import Services.SessionService;
+import Services.BorrowService;
 import java.util.List;
 import java.util.function.Consumer;
 import javafx.geometry.Insets;
@@ -18,17 +19,18 @@ import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
-import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
 import odb.Library;
+import odb.Library_Book;
 
 public class HomeView {
     private final BorderPane root = new BorderPane();
     private final SessionService sessionService;
+    private final BorrowService borrowService = new BorrowService();
     private static final String SETTINGS_ICON = "/images/settings_icon.png";
     private static final String PROFILE_ICON = "/images/profile_icon.png";
-    private static final String DEFAULT_LIBRARY_COVER = "/images/library/1_6Jp3vJWe7VFlFHZ9WhSJng.jpg";
+    private static final String DEFAULT_BOOK_COVER = "/images/library/1_6Jp3vJWe7VFlFHZ9WhSJng.jpg";
 
     public HomeView(
             LibraryService libraryService,
@@ -47,7 +49,7 @@ public class HomeView {
         List<Library> libraries = libraryService.getLibraries();
         VBox content = new VBox(24);
         content.getStyleClass().add("home-content");
-        content.getChildren().add(buildLibraryGrid(libraries, onLibraryOpen));
+        content.getChildren().add(buildLibraryGrid(libraries, libraryService, onLibraryOpen, onLogin));
 
         ScrollPane scrollPane = new ScrollPane(content);
         scrollPane.setFitToWidth(true);
@@ -61,15 +63,26 @@ public class HomeView {
             Runnable onProfile,
             Runnable onLogin
     ) {
-        HBox bar = new HBox(8);
+        HBox bar = new HBox(12);
         bar.getStyleClass().add("app-bar");
         bar.setAlignment(Pos.CENTER_LEFT);
+        bar.setPadding(new Insets(12));
+
+        Label title = new Label("Athenaeum Curator");
+        title.getStyleClass().add("app-title");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
 
         Button settingsButton = createImageButton(SETTINGS_ICON, "Settings");
-        settingsButton.setOnAction(event -> onSettings.run());
+        if (settingsButton != null) settingsButton.setOnAction(event -> {
+            System.out.println("Settings clicked");
+            onSettings.run();
+        });
 
         Button profileButton = createImageButton(PROFILE_ICON, "Profile");
-        profileButton.setOnAction(event -> {
+        if (profileButton != null) profileButton.setOnAction(event -> {
+            System.out.println("Profile clicked; loggedIn=" + sessionService.isLoggedIn());
             if (sessionService.isLoggedIn()) {
                 onProfile.run();
             } else {
@@ -77,22 +90,17 @@ public class HomeView {
             }
         });
 
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        bar.getChildren().addAll(spacer, settingsButton, profileButton);
+        bar.getChildren().addAll(title, spacer, settingsButton, profileButton);
         return bar;
     }
 
-    private Node buildLibraryGrid(List<Library> libraries, Consumer<Library> onLibraryOpen) {
-        FlowPane grid = new FlowPane();
-        grid.getStyleClass().add("library-grid");
-        grid.setHgap(20);
-        grid.setVgap(20);
-        grid.setPrefWrapLength(1100);
-
+    private Node buildLibraryGrid(List<Library> libraries, LibraryService libraryService, Consumer<Library> onLibraryOpen, Runnable onLogin) {
+        VBox wrapper = new VBox(18);
+        wrapper.setPadding(new Insets(20));
         if (libraries == null || libraries.isEmpty()) {
             VBox emptyCard = new VBox(6);
-            emptyCard.getStyleClass().add("card");
+            emptyCard.getStyleClass().add("card-empty");
+            emptyCard.setAlignment(Pos.CENTER);
             Label title = new Label("No libraries found");
             title.getStyleClass().add("section-title");
             Label hint = new Label("No branches are available yet.");
@@ -102,95 +110,246 @@ public class HomeView {
         }
 
         for (Library library : libraries) {
-            VBox card = new VBox(10);
-            card.getStyleClass().add("library-card");
-            card.setPrefWidth(260);
+            VBox libCard = new VBox(12);
+            libCard.getStyleClass().add("library-card-dark");
+            libCard.setPadding(new Insets(14));
 
-            StackPane imageWrap = new StackPane();
-            imageWrap.getStyleClass().add("image-wrap");
-            imageWrap.setPrefHeight(180);
-
-            if (sessionService.isShowLibraryCovers()) {
-                ImageView coverImage = createCoverImage(DEFAULT_LIBRARY_COVER);
-                imageWrap.getChildren().add(coverImage);
-            } else {
-                VBox defaultCover = new VBox(8);
-                defaultCover.getStyleClass().add("library-cover");
-                defaultCover.setAlignment(Pos.CENTER);
-
-                Label coverTitle = new Label("Athenaeum");
-                coverTitle.getStyleClass().add("library-cover-title");
-
-                Label coverSubtitle = new Label("Covers hidden in Settings");
-                coverSubtitle.getStyleClass().add("library-cover-subtitle");
-
-                defaultCover.getChildren().addAll(createIconLabel("account_balance"), coverTitle, coverSubtitle);
-                imageWrap.getChildren().add(defaultCover);
-            }
-
-            VBox content = new VBox(8);
-            content.getStyleClass().add("content");
-
+            HBox header = new HBox(12);
             Label name = new Label(library.getName());
             name.getStyleClass().add("card-title");
+            Region spacer = new Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+            Button viewButton = new Button("View Library");
+            viewButton.getStyleClass().add("view-library-button");
+            viewButton.setOnAction(e -> onLibraryOpen.accept(library));
+            header.getChildren().addAll(name, spacer, viewButton);
 
-            HBox locationRow = new HBox(6);
-            locationRow.setAlignment(Pos.CENTER_LEFT);
-            locationRow.setManaged(sessionService.isShowLibraryLocations());
-            locationRow.setVisible(sessionService.isShowLibraryLocations());
-            if (sessionService.isShowLibraryLocations()) {
-                Label locationIcon = createIconLabel("location:");
-                Label location = new Label(library.getLoction() == null ? "UNKNOWN" : library.getLoction());
-                location.getStyleClass().add("subtle-text");
-                locationRow.getChildren().addAll(locationIcon, location);
+            List<Library_Book> books = libraryService.getBooksForLibrary(library.getId());
+            FlowPane bookGrid = new FlowPane();
+            bookGrid.getStyleClass().add("book-grid");
+            bookGrid.setHgap(16);
+            bookGrid.setVgap(16);
+
+            if (books == null || books.isEmpty()) {
+                VBox emptyBooks = new VBox(8);
+                emptyBooks.setAlignment(Pos.CENTER_LEFT);
+                emptyBooks.getStyleClass().add("empty-books");
+                Label noBooks = new Label("No books available in this library.");
+                noBooks.getStyleClass().add("empty-text");
+                emptyBooks.getChildren().add(noBooks);
+                libCard.getChildren().addAll(header, emptyBooks);
+            } else {
+                for (Library_Book lb : books) {
+                    Node bookCard = createBookCard(lb, onLogin);
+                    bookGrid.getChildren().add(bookCard);
+                }
+                libCard.getChildren().addAll(header, bookGrid);
             }
 
-            Button viewButton = new Button("View Library");
-            viewButton.getStyleClass().add("outline-button");
-            viewButton.setOnAction(event -> onLibraryOpen.accept(library));
-            viewButton.setMaxWidth(Double.MAX_VALUE);
-
-            HBox footer = new HBox(viewButton);
-            HBox.setHgrow(viewButton, Priority.ALWAYS);
-
-            content.getChildren().addAll(name, locationRow, footer);
-            card.getChildren().addAll(imageWrap, content);
-            grid.getChildren().add(card);
+            wrapper.getChildren().add(libCard);
         }
 
-        return grid;
+        return wrapper;
+    }
+
+    private Node createBookCard(Library_Book lb, Runnable onLogin) {
+        VBox card = new VBox(10);
+        card.getStyleClass().add("book-card");
+        card.setPrefWidth(220);
+        card.setPadding(new Insets(12));
+
+        ImageView cover = createCoverImage(lb);
+        cover.getStyleClass().add("book-cover");
+
+        VBox meta = new VBox(6);
+        meta.getStyleClass().add("book-meta");
+
+        Label title = new Label(lb.getB() == null ? "Untitled" : lb.getB().getTitle());
+        title.getStyleClass().add("book-title");
+        Label author = new Label(lb.getB() == null ? "Unknown" : lb.getB().getAuthor());
+        author.getStyleClass().add("book-author");
+
+        Label copies = new Label("Available: " + lb.getAvailable_Copies());
+        copies.getStyleClass().add("book-copies");
+
+        Button borrow = new Button("Borrow");
+        borrow.getStyleClass().add("primary-button");
+        borrow.setDisable(lb.getAvailable_Copies() <= 0);
+
+        Label feedback = new Label();
+        feedback.getStyleClass().addAll("feedback-text", "subtle-text");
+
+        borrow.setOnAction(event -> {
+            if (!sessionService.isLoggedIn()) {
+                onLogin.run();
+                return;
+            }
+
+            borrow.setDisable(true);
+            feedback.setText("Processing...");
+
+            Thread t = new Thread(() -> {
+                try {
+                    borrowService.borrowLibraryBooks(
+                            sessionService.getCurrentUser(),
+                            java.util.Collections.singletonList(lb.getId())
+                    );
+                    javafx.application.Platform.runLater(() -> {
+                        feedback.getStyleClass().removeAll("error-text");
+                        feedback.getStyleClass().add("success-text");
+                        feedback.setText("Borrow request submitted");
+                        copies.setText("Available: " + Math.max(0, lb.getAvailable_Copies() - 1));
+                        borrow.setDisable(true);
+                    });
+                } catch (RuntimeException ex) {
+                    javafx.application.Platform.runLater(() -> {
+                        feedback.getStyleClass().removeAll("success-text");
+                        feedback.getStyleClass().add("error-text");
+                        feedback.setText(ex.getMessage());
+                        borrow.setDisable(false);
+                    });
+                }
+            });
+            t.setDaemon(true);
+            t.start();
+        });
+
+        meta.getChildren().addAll(title, author, copies, borrow, feedback);
+        card.getChildren().addAll(cover, meta);
+
+        return card;
+    }
+
+    private ImageView createCoverImage(Library_Book lb) {
+        ImageView imageView = new ImageView();
+        String[] tryPaths = new String[3];
+        tryPaths[0] = (lb.getB() != null && lb.getB().getId() != null) ? "/images/library/" + lb.getB().getId() + ".jpg" : null;
+        tryPaths[1] = (lb.getB() != null && lb.getB().getId() != null) ? "/images/library/" + lb.getB().getId() + ".png" : null;
+        tryPaths[2] = DEFAULT_BOOK_COVER;
+
+        Image img = null;
+        for (String p : tryPaths) {
+            if (p == null) continue;
+            // ensure path starts with '/'
+            String normalized = p.startsWith("/") ? p : "/" + p;
+            try (java.io.InputStream is = getClass().getResourceAsStream(normalized)) {
+                if (is != null) {
+                    try {
+                        img = new Image(is, 200, 140, true, true);
+                        break;
+                    } catch (Exception e) {
+                        // proceed to next candidate
+                    }
+                }
+            } catch (Exception e) {
+                // ignore and continue to next path
+            }
+        }
+
+        if (img == null) {
+            // as a last resort try to load default placeholder directly
+            try (java.io.InputStream is = getClass().getResourceAsStream(DEFAULT_BOOK_COVER)) {
+                if (is != null) {
+                    try {
+                        img = new Image(is, 200, 140, true, true);
+                    } catch (Exception e) {
+                        img = null;
+                    }
+                }
+            } catch (Exception e) {
+                img = null;
+            }
+        }
+
+        if (img != null) {
+            imageView.setImage(img);
+            imageView.setFitWidth(200);
+            imageView.setFitHeight(140);
+            imageView.setPreserveRatio(true);
+            imageView.setSmooth(true);
+            imageView.setCache(true);
+
+            Rectangle clip = new Rectangle(200, 140);
+            clip.setArcWidth(14);
+            clip.setArcHeight(14);
+            imageView.setClip(clip);
+        } else {
+            // No image found: produce an empty ImageView with styling so UI remains intact
+            imageView.getStyleClass().add("book-cover-missing");
+            imageView.setFitWidth(200);
+            imageView.setFitHeight(140);
+            imageView.setPreserveRatio(true);
+            // add a simple transparent clip to keep layout
+            Rectangle clip = new Rectangle(200, 140);
+            clip.setArcWidth(14);
+            clip.setArcHeight(14);
+            imageView.setClip(clip);
+        }
+
+        return imageView;
     }
 
     private Button createImageButton(String imagePath, String accessibleText) {
         Button button = new Button();
         button.getStyleClass().add("icon-button");
-        button.setGraphic(createImageView(imagePath, 24, 24));
+        try {
+            ImageView iv = createImageView(imagePath, 20, 20);
+            if (iv != null) button.setGraphic(iv);
+        } catch (Exception ex) {
+            System.out.println("Failed to load image for button: " + imagePath + " -> " + ex.getMessage());
+        }
         button.setAccessibleText(accessibleText);
         return button;
     }
 
-    private Label createIconLabel(String icon) {
-        Label label = new Label(icon);
-        label.getStyleClass().add("material-symbol");
-        return label;
-    }
+    private ImageView createImageView(String path, double fitWidth, double fitHeight) {
+        ImageView imageView = new ImageView();
+        if (path == null || path.trim().isEmpty()) {
+            imageView.getStyleClass().add("icon-missing");
+            imageView.setFitWidth(fitWidth);
+            imageView.setFitHeight(fitHeight);
+            imageView.setPreserveRatio(true);
+            return imageView;
+        }
 
-    private ImageView createCoverImage(String imagePath) {
-        ImageView imageView = createImageView(imagePath, 260, 180);
-        imageView.getStyleClass().add("library-cover-image");
-        Rectangle clip = new Rectangle(260, 180);
-        clip.setArcWidth(24);
-        clip.setArcHeight(24);
-        imageView.setClip(clip);
-        return imageView;
-    }
+        String normalized = path.startsWith("/") ? path : "/" + path;
+        Image img = null;
+        try (java.io.InputStream is = getClass().getResourceAsStream(normalized)) {
+            if (is != null) {
+                try {
+                    img = new Image(is, fitWidth, fitHeight, true, true);
+                } catch (Exception e) {
+                    img = null;
+                }
+            }
+        } catch (Exception e) {
+            // ignore and try fallback
+            img = null;
+        }
 
-    private ImageView createImageView(String imagePath, double fitWidth, double fitHeight) {
-        Image image = new Image(getClass().getResourceAsStream(imagePath));
-        ImageView imageView = new ImageView(image);
+        if (img == null) {
+            // fallback to default book cover if available
+            try (java.io.InputStream is = getClass().getResourceAsStream(DEFAULT_BOOK_COVER)) {
+                if (is != null) {
+                    try {
+                        img = new Image(is, fitWidth, fitHeight, true, true);
+                    } catch (Exception e) {
+                        img = null;
+                    }
+                }
+            } catch (Exception e) {
+                img = null;
+            }
+        }
+
+        if (img != null) {
+            imageView.setImage(img);
+        } else {
+            imageView.getStyleClass().add("icon-missing");
+        }
         imageView.setFitWidth(fitWidth);
         imageView.setFitHeight(fitHeight);
-        imageView.setPreserveRatio(false);
+        imageView.setPreserveRatio(true);
         imageView.setSmooth(true);
         imageView.setCache(true);
         return imageView;

@@ -14,7 +14,7 @@ public class Library implements Serializable {
 
     private static final long serialVersionUID = 1L;
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
      @Column(name="Location")
     private String Loction;
@@ -24,6 +24,11 @@ public class Library implements Serializable {
       List<Library_Book> Library_Book;
 
     public Library() {
+    }
+
+    public Library(String Loction, String Name) {
+        this.Loction = Loction;
+        this.Name = Name;
     }
     public String getLoction() {
         return Loction;
@@ -58,7 +63,6 @@ public class Library implements Serializable {
 
     @Override
     public boolean equals(Object object) {
-        // TODO: Warning - this method won't work in the case the id fields are not set
         if (!(object instanceof Library)) {
             return false;
         }
@@ -67,11 +71,6 @@ public class Library implements Serializable {
             return false;
         }
         return true;
-    }
-
-    public Library(String Loction, String Name) {
-        this.Loction = Loction;
-        this.Name = Name;
     }
 
     @Override

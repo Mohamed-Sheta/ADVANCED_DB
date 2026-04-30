@@ -5,6 +5,7 @@ import Services.LibraryService;
 import Services.SessionService;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
@@ -182,7 +183,7 @@ public class LibraryDetailView {
         List<BookRow> selectedRows = rows.stream()
                 .filter(BookRow::isSelected)
                 .filter(BookRow::isSelectable)
-                .toList();
+                .collect(Collectors.toList());
 
         if (selectedRows.isEmpty()) {
             messageLabel.setText("Please select at least one available book.");
@@ -192,7 +193,7 @@ public class LibraryDetailView {
         try {
             List<Long> libraryBookIds = selectedRows.stream()
                     .map(BookRow::getLibraryBookId)
-                    .toList();
+                    .collect(Collectors.toList());
             borrowService.borrowLibraryBooks(sessionService.getCurrentUser(), libraryBookIds);
             for (BookRow row : selectedRows) {
                 row.decrementAvailableCopies();
@@ -210,13 +211,12 @@ public class LibraryDetailView {
         TableColumn<BookRow, Boolean> selectCol = new TableColumn<>("Select");
         selectCol.setCellValueFactory(cell -> cell.getValue().selectedProperty());
         selectCol.setPrefWidth(80);
-        selectCol.setCellFactory(column -> new TableCell<>() {
+        selectCol.setCellFactory(column -> new TableCell<BookRow, Boolean>() {
             private final CheckBox checkBox = new CheckBox();
-            private BookRow boundRow;
 
             {
                 checkBox.setOnAction(event -> {
-                    BookRow row = getTableRow() == null ? null : getTableRow().getItem();
+                    BookRow row = (BookRow) getTableRow().getItem();
                     if (row != null) {
                         row.setSelected(checkBox.isSelected());
                         updateSelectionSummary();
@@ -227,18 +227,13 @@ public class LibraryDetailView {
             @Override
             protected void updateItem(Boolean item, boolean empty) {
                 super.updateItem(item, empty);
-                BookRow row = (getTableRow() == null) ? null : getTableRow().getItem();
-                if (boundRow != null) {
-                    checkBox.selectedProperty().unbindBidirectional(boundRow.selectedProperty());
-                    boundRow = null;
-                }
+                BookRow row = (getTableRow() == null) ? null : (BookRow) getTableRow().getItem();
 
                 if (empty || row == null) {
                     setGraphic(null);
                     return;
                 }
                 checkBox.selectedProperty().bindBidirectional(row.selectedProperty());
-                boundRow = row;
                 checkBox.setDisable(!row.isSelectable());
                 setGraphic(checkBox);
             }
@@ -255,7 +250,7 @@ public class LibraryDetailView {
 
         TableColumn<BookRow, String> statusCol = new TableColumn<>("Status");
         statusCol.setCellValueFactory(cell -> cell.getValue().statusProperty());
-        statusCol.setCellFactory(column -> new TableCell<>() {
+        statusCol.setCellFactory(column -> new TableCell<BookRow, String>() {
             private final Label chip = new Label();
 
             @Override
@@ -272,7 +267,7 @@ public class LibraryDetailView {
         });
 
         tableView.getColumns().addAll(selectCol, titleCol, authorCol, availableCol, statusCol);
-        tableView.setRowFactory(tv -> new javafx.scene.control.TableRow<>() {
+        tableView.setRowFactory(tv -> new javafx.scene.control.TableRow<BookRow>() {
             @Override
             protected void updateItem(BookRow item, boolean empty) {
                 super.updateItem(item, empty);
@@ -361,7 +356,30 @@ public class LibraryDetailView {
     }
 
     private ImageView createImageView(String path, double fitWidth, double fitHeight) {
-        ImageView imageView = new ImageView(new Image(getClass().getResourceAsStream(path)));
+        ImageView imageView = new ImageView();
+        if (path == null || path.trim().isEmpty()) {
+            imageView.getStyleClass().add("icon-missing");
+            imageView.setFitWidth(fitWidth);
+            imageView.setFitHeight(fitHeight);
+            imageView.setPreserveRatio(false);
+            return imageView;
+        }
+
+        String normalized = path.startsWith("/") ? path : "/" + path;
+        try (java.io.InputStream is = getClass().getResourceAsStream(normalized)) {
+            if (is != null) {
+                try {
+                    Image image = new Image(is, fitWidth, fitHeight, true, true);
+                    imageView.setImage(image);
+                } catch (Exception ex) {
+                    imageView.getStyleClass().add("icon-missing");
+                }
+            } else {
+                imageView.getStyleClass().add("icon-missing");
+            }
+        } catch (Exception ex) {
+            imageView.getStyleClass().add("icon-missing");
+        }
         imageView.setFitWidth(fitWidth);
         imageView.setFitHeight(fitHeight);
         imageView.setPreserveRatio(false);
@@ -447,7 +465,8 @@ public class LibraryDetailView {
         }
 
         public boolean isAvailable() {
-            return "Available".equals(status);
+            String s = status == null ? null : status.get();
+            return "Available".equals(s);
         }
 
         public boolean isSelected() {

@@ -11,15 +11,21 @@ import odb.Library_Book;
 
 public class LibraryBookDAO {
 
-    private EntityManagerFactory emf =
-            Persistence.createEntityManagerFactory("com.mycompany_dbconnection_jar_1.0-SNAPSHOTPU");
-    
+    private static EntityManagerFactory emf;
+
+    public LibraryBookDAO() {
+        synchronized (LibraryBookDAO.class) {
+            if (emf == null) {
+                emf = Persistence.createEntityManagerFactory("dbconnectionPU");
+            }
+        }
+    }
+
         //get the first book that has copies to the user 
     public Library_Book asigh_book(Book b1)
     {
-        Library_Book lb=new Library_Book();
         List<Library_Book> lb1=findByBookId(b1.getId());//get all books tha have this id
-    
+
         if(lb1!=null)
         {
             for(Library_Book b:lb1)
@@ -27,12 +33,11 @@ public class LibraryBookDAO {
                 //assign to the first one i found
                 if(b.getAvailable_Copies()>0)
                 {
-                    lb=b;
-                    break;
+                    return b;
                 }
             }
         }
-        return lb;
+        return null;
     }
     public void insert(Library_Book libraryBook) {
         EntityManager em = emf.createEntityManager();
