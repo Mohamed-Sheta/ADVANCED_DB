@@ -23,7 +23,13 @@ import DAO.BorrowDAO;
 import DAO.PersonDAO;
 import odb.Person;
 import odb.Borrow;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import odb.Book;
 
 public class ProfileView {
     private final BorderPane root = new BorderPane();
@@ -313,6 +319,21 @@ public class ProfileView {
         Label feedbackLabel = new Label();
         feedbackLabel.getStyleClass().addAll("auth-message");
 
+        TextField searchField = new TextField();
+        searchField.setPromptText("Search borrowed books...");
+        searchField.getStyleClass().add("auth-input");
+        searchField.setMaxWidth(Double.MAX_VALUE);
+
+        ComboBox<String> statusFilter = new ComboBox<>();
+        statusFilter.getItems().addAll("All", "Borrowed", "Returned");
+        statusFilter.setValue("All");
+        statusFilter.getStyleClass().add("auth-input");
+        statusFilter.setPrefWidth(160);
+
+        HBox filterBar = new HBox(12, searchField, statusFilter);
+        filterBar.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(searchField, Priority.ALWAYS);
+
         // Don't perform DAO calls on the JavaFX thread. Show a placeholder immediately
         VBox booksList = new VBox(12);
         booksList.getStyleClass().add("borrowed-books-list");
@@ -321,28 +342,94 @@ public class ProfileView {
         booksList.getChildren().add(loading);
 
         // Populate the UI so the view renders immediately
-        details.getChildren().addAll(title, description, feedbackLabel, booksList);
+        details.getChildren().addAll(title, description, filterBar, feedbackLabel, booksList);
+
+        PersonDAO personDAO = new PersonDAO();
+        BorrowDAO borrowDAO = new BorrowDAO();
+        Long personId = sessionService.getCurrentUser() == null ? null : sessionService.getCurrentUser().getId();
+        AtomicReference<List<Borrow>> allBorrowsRef = new AtomicReference<>(java.util.Collections.emptyList());
+        AtomicReference<Runnable> refreshRef = new AtomicReference<>(() -> {
+        });
+
+        Consumer<List<Borrow>> renderList = (rows) -> {
+            booksList.getChildren().clear();
+            if (rows == null || rows.isEmpty()) {
+                Label none = new Label("No books match your filter.");
+                none.getStyleClass().add("section-caption");
+                booksList.getChildren().add(none);
+                return;
+            }
+            for (Borrow borrow : rows) {
+                HBox row = buildBorrowEntry(borrow, sessionService, personDAO, feedbackLabel, refreshRef.get());
+                booksList.getChildren().add(row);
+            }
+        };
+
+        Runnable triggerFilter = () -> {
+            String query = searchField.getText() == null ? "" : searchField.getText().trim();
+            String status = statusFilter.getValue() == null ? "All" : statusFilter.getValue();
+
+            Thread filterThread = new Thread(() -> {
+                List<Borrow> base = allBorrowsRef.get();
+                Set<Long> allowedBookIds = null;
+                if (personId != null && !query.isEmpty()) {
+                    List<Book> matches = personDAO.searchBorrowedBooksByText(personId, query);
+                    Set<Long> ids = new HashSet<>();
+                    if (matches != null) {
+                        for (Book book : matches) {
+                            if (book != null && book.getId() != null) {
+                                ids.add(book.getId());
+                            }
+                        }
+                    }
+                    allowedBookIds = ids;
+                }
+
+                List<Borrow> filtered = new ArrayList<>();
+                if (base != null) {
+                    for (Borrow borrow : base) {
+                        if (borrow == null) {
+                            continue;
+                        }
+
+                        if (allowedBookIds != null) {
+                            odb.Library_Book lb = borrow.getLibrary_Book();
+                            Book book = lb == null ? null : lb.getB();
+                            Long bookId = book == null ? null : book.getId();
+                            if (bookId == null || !allowedBookIds.contains(bookId)) {
+                                continue;
+                            }
+                        }
+
+                        if ("Borrowed".equalsIgnoreCase(status) && !"BORROWED".equalsIgnoreCase(borrow.getStatus())) {
+                            continue;
+                        }
+                        if ("Returned".equalsIgnoreCase(status) && !"RETURNED".equalsIgnoreCase(borrow.getStatus())) {
+                            continue;
+                        }
+
+                        filtered.add(borrow);
+                    }
+                }
+
+                javafx.application.Platform.runLater(() -> renderList.accept(filtered));
+            });
+            filterThread.setDaemon(true);
+            filterThread.start();
+        };
+
+        refreshRef.set(triggerFilter);
+        searchField.textProperty().addListener((obs, oldValue, newValue) -> triggerFilter.run());
+        statusFilter.valueProperty().addListener((obs, oldValue, newValue) -> triggerFilter.run());
 
         // Load borrowed books in a background thread and update UI with Platform.runLater
         Thread loader = new Thread(() -> {
             try {
-                BorrowDAO borrowDAO = new BorrowDAO();
-                PersonDAO personDAO = new PersonDAO();
-                Long personId = sessionService.getCurrentUser() == null ? null : sessionService.getCurrentUser().getId();
                 List<Borrow> borrowedBooks = personId == null ? java.util.Collections.emptyList() : borrowDAO.findByPersonId(personId);
+                allBorrowsRef.set(borrowedBooks == null ? java.util.Collections.emptyList() : borrowedBooks);
 
                 javafx.application.Platform.runLater(() -> {
-                    booksList.getChildren().clear();
-                    if (borrowedBooks == null || borrowedBooks.isEmpty()) {
-                        Label none = new Label("You have no borrowed books.");
-                        none.getStyleClass().add("section-caption");
-                        booksList.getChildren().add(none);
-                    } else {
-                        for (Borrow borrow : borrowedBooks) {
-                            HBox row = buildBorrowEntry(borrow, sessionService, personDAO, feedbackLabel);
-                            booksList.getChildren().add(row);
-                        }
-                    }
+                    triggerFilter.run();
                 });
             } catch (Exception ex) {
                 javafx.application.Platform.runLater(() -> {
@@ -364,7 +451,7 @@ public class ProfileView {
 
     // Build UI row for a single Borrow entry. The actual DB rollback is performed on a background thread;
     // UI updates are applied via Platform.runLater.
-    private HBox buildBorrowEntry(Borrow borrow, SessionService sessionService, PersonDAO personDAO, Label feedbackLabel) {
+    private HBox buildBorrowEntry(Borrow borrow, SessionService sessionService, PersonDAO personDAO, Label feedbackLabel, Runnable onStatusChange) {
         odb.Library_Book lb = borrow.getLibrary_Book();
         String bookTitle = lb != null && lb.getB() != null ? lb.getB().getTitle() : "Unknown title";
         String bookAuthor = lb != null && lb.getB() != null ? lb.getB().getAuthor() : "Unknown author";
@@ -394,6 +481,9 @@ public class ProfileView {
                         borrow.setStatus("RETURNED");
                         bookLabel.setText(bookTitle + " — " + bookAuthor + "  (Status: RETURNED)");
                         returnButton.setDisable(true);
+                        if (onStatusChange != null) {
+                            onStatusChange.run();
+                        }
                     });
                 } catch (Exception ex) {
                     javafx.application.Platform.runLater(() -> {
