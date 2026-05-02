@@ -57,6 +57,12 @@ The system is designed using **Object-Oriented Programming (OOP)** principles an
 
 ---
 
+## 🧾 ERD
+
+<img width="850" height="580" alt="WhatsApp Image 2026-05-02 at 8 43 14 PM (1)" src="https://github.com/user-attachments/assets/9909bdec-6d45-4310-a049-f0e3c07b59b9" />
+
+---
+
 ## 🔧 Setup & Installation
 
 ### 1. Clone the repository
