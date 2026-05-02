@@ -62,7 +62,7 @@ public class SettingsView {
         Label preferencesTitle = new Label("Preferences");
         preferencesTitle.getStyleClass().add("section-title");
 
-        CheckBox showCovers = new CheckBox("Show library cover images");
+        CheckBox showCovers = new CheckBox("Show Book cover images");
         showCovers.getStyleClass().add("settings-toggle");
         showCovers.selectedProperty().bindBidirectional(sessionService.showLibraryCoversProperty());
 

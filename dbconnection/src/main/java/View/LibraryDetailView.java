@@ -213,6 +213,7 @@ public class LibraryDetailView {
         selectCol.setPrefWidth(80);
         selectCol.setCellFactory(column -> new TableCell<BookRow, Boolean>() {
             private final CheckBox checkBox = new CheckBox();
+            private BooleanProperty boundProperty;
 
             {
                 checkBox.setOnAction(event -> {
@@ -230,10 +231,18 @@ public class LibraryDetailView {
                 BookRow row = (getTableRow() == null) ? null : (BookRow) getTableRow().getItem();
 
                 if (empty || row == null) {
+                    if (boundProperty != null) {
+                        checkBox.selectedProperty().unbindBidirectional(boundProperty);
+                        boundProperty = null;
+                    }
                     setGraphic(null);
                     return;
                 }
-                checkBox.selectedProperty().bindBidirectional(row.selectedProperty());
+                if (boundProperty != null) {
+                    checkBox.selectedProperty().unbindBidirectional(boundProperty);
+                }
+                boundProperty = row.selectedProperty();
+                checkBox.selectedProperty().bindBidirectional(boundProperty);
                 checkBox.setDisable(!row.isSelectable());
                 setGraphic(checkBox);
             }

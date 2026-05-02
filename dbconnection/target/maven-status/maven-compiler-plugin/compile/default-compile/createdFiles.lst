@@ -1,5 +1,4 @@
 odb\Library_Book.class
-com\mycompany\dbconnection\dbsetconnetion.class
 View\LibraryDetailView.class
 odb\Book.class
 Services\LibraryService.class
@@ -11,8 +10,6 @@ View\ProfileView.class
 odb\Person.class
 View\LibraryDetailView$3.class
 Services\SessionService.class
-com\mycompany\dbconnection\Dbconnection.class
-com\mycompany\dbconnection\inserting_borrowsbooks.class
 DAO\PersonDAO.class
 View\RegisterView.class
 Services\PersonService.class

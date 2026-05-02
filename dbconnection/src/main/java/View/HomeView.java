@@ -5,6 +5,7 @@ import Services.SessionService;
 import Services.BorrowService;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -12,6 +13,7 @@ import javafx.scene.Parent;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
@@ -49,7 +51,20 @@ public class HomeView {
         List<Library> libraries = libraryService.getLibraries();
         VBox content = new VBox(24);
         content.getStyleClass().add("home-content");
-        content.getChildren().add(buildLibraryGrid(libraries, libraryService, onLibraryOpen, onLogin));
+
+        TextField searchField = new TextField();
+        searchField.getStyleClass().add("search-field");
+        searchField.setPromptText("Search for your books...");
+
+        VBox gridHolder = new VBox();
+        gridHolder.getChildren().add(buildLibraryGrid(libraries, libraryService, onLibraryOpen, onLogin, ""));
+
+        searchField.textProperty().addListener((obs, oldVal, newVal) -> {
+            String query = normalizeSearchQuery(newVal);
+            gridHolder.getChildren().setAll(buildLibraryGrid(libraries, libraryService, onLibraryOpen, onLogin, query));
+        });
+
+        content.getChildren().addAll(searchField, gridHolder);
 
         ScrollPane scrollPane = new ScrollPane(content);
         scrollPane.setFitToWidth(true);
@@ -94,7 +109,13 @@ public class HomeView {
         return bar;
     }
 
-    private Node buildLibraryGrid(List<Library> libraries, LibraryService libraryService, Consumer<Library> onLibraryOpen, Runnable onLogin) {
+    private Node buildLibraryGrid(
+            List<Library> libraries,
+            LibraryService libraryService,
+            Consumer<Library> onLibraryOpen,
+            Runnable onLogin,
+            String bookTitleQuery
+    ) {
         VBox wrapper = new VBox(18);
         wrapper.setPadding(new Insets(20));
         if (libraries == null || libraries.isEmpty()) {
@@ -109,20 +130,35 @@ public class HomeView {
             return emptyCard;
         }
 
+        boolean anyCardAdded = false;
         for (Library library : libraries) {
             VBox libCard = new VBox(12);
             libCard.getStyleClass().add("library-card-dark");
             libCard.setPadding(new Insets(14));
 
             HBox header = new HBox(12);
+            VBox titleBlock = new VBox(4);
             Label name = new Label(library.getName());
             name.getStyleClass().add("card-title");
+            Label location = new Label();
+            location.getStyleClass().add("section-caption");
+            String locationText = library.getLoction();
+            if (locationText == null || locationText.trim().isEmpty()) {
+                location.setText("");
+                location.setVisible(false);
+                location.setManaged(false);
+            } else {
+                location.setText("Location: " + locationText.trim());
+                location.visibleProperty().bind(sessionService.showLibraryLocationsProperty());
+                location.managedProperty().bind(sessionService.showLibraryLocationsProperty());
+            }
+            titleBlock.getChildren().addAll(name, location);
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
             Button viewButton = new Button("View Library");
             viewButton.getStyleClass().add("view-library-button");
             viewButton.setOnAction(e -> onLibraryOpen.accept(library));
-            header.getChildren().addAll(name, spacer, viewButton);
+            header.getChildren().addAll(titleBlock, spacer, viewButton);
 
             List<Library_Book> books = libraryService.getBooksForLibrary(library.getId());
             FlowPane bookGrid = new FlowPane();
@@ -130,7 +166,12 @@ public class HomeView {
             bookGrid.setHgap(16);
             bookGrid.setVgap(16);
 
-            if (books == null || books.isEmpty()) {
+            List<Library_Book> filteredBooks = filterBooksByTitle(books, bookTitleQuery);
+            if (bookTitleQuery != null && !bookTitleQuery.isEmpty() && (filteredBooks == null || filteredBooks.isEmpty())) {
+                continue;
+            }
+
+            if (filteredBooks == null || filteredBooks.isEmpty()) {
                 VBox emptyBooks = new VBox(8);
                 emptyBooks.setAlignment(Pos.CENTER_LEFT);
                 emptyBooks.getStyleClass().add("empty-books");
@@ -139,7 +180,7 @@ public class HomeView {
                 emptyBooks.getChildren().add(noBooks);
                 libCard.getChildren().addAll(header, emptyBooks);
             } else {
-                for (Library_Book lb : books) {
+                for (Library_Book lb : filteredBooks) {
                     Node bookCard = createBookCard(lb, onLogin);
                     bookGrid.getChildren().add(bookCard);
                 }
@@ -147,9 +188,47 @@ public class HomeView {
             }
 
             wrapper.getChildren().add(libCard);
+            anyCardAdded = true;
+        }
+
+        if (!anyCardAdded) {
+            VBox emptyCard = new VBox(6);
+            emptyCard.getStyleClass().add("card-empty");
+            emptyCard.setAlignment(Pos.CENTER);
+            Label title = new Label("No matching books");
+            title.getStyleClass().add("section-title");
+            Label hint = new Label("Try a different title.");
+            hint.getStyleClass().add("section-caption");
+            emptyCard.getChildren().addAll(title, hint);
+            return emptyCard;
         }
 
         return wrapper;
+    }
+
+    private List<Library_Book> filterBooksByTitle(List<Library_Book> books, String query) {
+        if (books == null) {
+            return null;
+        }
+        if (query == null || query.isEmpty()) {
+            return books;
+        }
+        String normalized = query.toLowerCase();
+        return books.stream()
+                .filter(lb -> {
+                    if (lb == null || lb.getB() == null || lb.getB().getTitle() == null) {
+                        return false;
+                    }
+                    return lb.getB().getTitle().toLowerCase().contains(normalized);
+                })
+                .collect(Collectors.toList());
+    }
+
+    private String normalizeSearchQuery(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim();
     }
 
     private Node createBookCard(Library_Book lb, Runnable onLogin) {
@@ -160,6 +239,8 @@ public class HomeView {
 
         ImageView cover = createCoverImage(lb);
         cover.getStyleClass().add("book-cover");
+        cover.visibleProperty().bind(sessionService.showLibraryCoversProperty());
+        cover.managedProperty().bind(sessionService.showLibraryCoversProperty());
 
         VBox meta = new VBox(6);
         meta.getStyleClass().add("book-meta");
@@ -293,7 +374,7 @@ public class HomeView {
         Button button = new Button();
         button.getStyleClass().add("icon-button");
         try {
-            ImageView iv = createImageView(imagePath, 20, 20);
+            ImageView iv = createImageView(imagePath, 24, 24);
             if (iv != null) button.setGraphic(iv);
         } catch (Exception ex) {
             System.out.println("Failed to load image for button: " + imagePath + " -> " + ex.getMessage());

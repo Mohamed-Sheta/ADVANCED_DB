@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import javax.persistence.*;
@@ -90,27 +91,33 @@ public class PersonDAO {
                 throw new IllegalStateException("Book is not available");
             }
 
-            boolean alreadyBorrowed = !em.createQuery(
-                            "SELECT b FROM Borrow b WHERE b.p.id = :personId AND b.Library_Book.id = :libraryBookId AND b.status = :status",
+            List<Borrow> existingBorrows = em.createQuery(
+                            "SELECT b FROM Borrow b WHERE b.p.id = :personId AND b.Library_Book.id = :libraryBookId",
                             Borrow.class
                     )
                     .setParameter("personId", managedPerson.getId())
                     .setParameter("libraryBookId", libraryBook.getId())
-                    .setParameter("status", "BORROWED")
-                    .getResultList()
-                    .isEmpty();
-            if (alreadyBorrowed) {
-                throw new IllegalStateException("This book is already borrowed");
+                    .getResultList();
+            Borrow existingBorrow = existingBorrows.isEmpty() ? null : existingBorrows.get(0);
+
+            if (existingBorrow != null) {
+                if ("BORROWED".equals(existingBorrow.getStatus())) {
+                    throw new IllegalStateException("This book is already borrowed");
+                }
+                existingBorrow.setBorrowDate(LocalDate.now());
+                existingBorrow.setReturnDate(null);
+                existingBorrow.setStatus("BORROWED");
+                libraryBook.setAvailable_Copies(libraryBook.getAvailable_Copies() - 1);
+                em.merge(existingBorrow);
+            } else {
+                libraryBook.setAvailable_Copies(libraryBook.getAvailable_Copies() - 1);
+                Borrow borrow = new Borrow();
+                borrow.setP(managedPerson);
+                borrow.setBorrowDate(LocalDate.now());
+                borrow.setStatus("BORROWED");
+                borrow.setLibrary_Book(libraryBook);
+                em.persist(borrow);
             }
-
-            libraryBook.setAvailable_Copies(libraryBook.getAvailable_Copies() - 1);
-
-            Borrow borrow = new Borrow();
-            borrow.setP(managedPerson);
-            borrow.setBorrowDate(LocalDate.now());
-            borrow.setStatus("BORROWED");
-            borrow.setLibrary_Book(libraryBook);
-            em.persist(borrow);
 
             em.getTransaction().commit();
         } catch (RuntimeException ex) {
@@ -122,6 +129,36 @@ public class PersonDAO {
         em.close();
     }
 }
+
+    public List<Book> searchBorrowedBooksByText(Long personId, String inputText) {
+        if (personId == null) {
+            return Collections.emptyList();
+        }
+        String trimmed = inputText == null ? "" : inputText.trim();
+        if (trimmed.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        EntityManager em = emf.createEntityManager();
+        try {
+            String pattern = "%" + trimmed.toLowerCase() + "%";
+            return em.createQuery(
+                            "SELECT DISTINCT b2 " +
+                            "FROM Person p " +
+                            "JOIN p.b br " +
+                            "JOIN br.Library_Book lb " +
+                            "JOIN lb.B b2 " +
+                            "WHERE p.id = :personId " +
+                            "AND (LOWER(b2.Title) LIKE :pattern OR LOWER(b2.Author) LIKE :pattern)",
+                            Book.class
+                    )
+                    .setParameter("personId", personId)
+                    .setParameter("pattern", pattern)
+                    .getResultList();
+        } finally {
+            em.close();
+        }
+    }
 
 public void insert(Person p) {
         EntityManager em = emf.createEntityManager();
